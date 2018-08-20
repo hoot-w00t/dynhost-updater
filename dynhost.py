@@ -9,10 +9,10 @@ hosts = [ 'www.mydomain.com',
 
 delay = 120 # delay in seconds between each check for a new IP address
 
-suffix = ''
-password = ''
+suffix = '' # the dynhost suffix to login
+password = '' # the associated password
 
-lastWanPath = 'lastWanIp'
+lastWanPath = 'lastWanIp' # the ful filepath where the last IP will be stored
 
 lastWanIp = ''
 currentIp = ''
