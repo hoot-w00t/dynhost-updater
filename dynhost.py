@@ -12,7 +12,7 @@ delay = 120 # delay in seconds between each check for a new IP address
 suffix = '' # the dynhost suffix to login
 password = '' # the associated password
 
-lastWanPath = 'lastWanIp' # the ful filepath where the last IP will be stored
+lastWanPath = 'lastWanIp' # the full filepath where the last IP will be stored
 
 lastWanIp = ''
 currentIp = ''
@@ -41,7 +41,7 @@ while True:
         # write the new ip to lastWan
         g = open(lastWanPath, 'w')
         g.write(currentIp)
-        g.close
+        g.close()
 
         lastWanIp = currentIp
     
