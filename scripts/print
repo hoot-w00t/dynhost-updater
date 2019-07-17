@@ -1,0 +1,3 @@
+#!/bin/sh
+
+echo "DynHost: Caught an error while updating '$1'"

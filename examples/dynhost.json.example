@@ -1,0 +1,49 @@
+{
+    "auths": {
+        "default": {
+            "username": "domain.com-suffix",
+            "password": "password"
+        },
+
+        "sub": {
+            "username": "sub.domain.com-sub-suffix",
+            "password": "sub-password"
+        }
+    },
+
+    "hosts": {
+        "root": {
+            "hostname": "mydomain.com",
+            "auth": "default",
+            "last_ip": "127.0.0.1",
+            "ip_method": "ipify",
+            "fallback": true
+        },
+
+        "www": {
+            "hostname": "www.mydomain.com",
+            "auth": "default",
+            "last_ip": "127.0.0.1",
+            "ip_method": "ipify",
+            "fallback": true
+        },
+
+        "sub": {
+            "hostname": "subdomain.mydomain.com",
+            "auth": "sub",
+            "last_ip": "127.0.0.1",
+            "ip_method": "ipify",
+            "fallback": false
+        }
+    },
+
+    "settings": {
+        "update_delay": 300,
+        "fallback_ip_method": "ipify",
+
+        "on_error": {
+            "enabled": true,
+            "script": "print"
+        }
+    }
+}

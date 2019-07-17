@@ -1,0 +1,12 @@
+[Unit]
+Description="Dynamic DNS Client for DynHost"
+Requires=multi-user.target
+
+[Service]
+WorkingDirectory=/etc/dynhost
+ExecStart=/usr/bin/python3 /usr/bin/dynhost.py
+User=dynhost
+Group=dynhost
+
+[Install]
+WantedBy=multi-user.target
