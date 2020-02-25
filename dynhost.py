@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
 """
-    Dynamic DNS client for DynHost
-    Copyright (C) 2019 akrocynova
+    Dynamic DNS Client for DynHost
+    Copyright (C) 2019-2020 akrocynova
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,265 +19,422 @@
 
 """
 
-import os, sys, argparse, time, json, requests
+from json import load as load_json, dump as dump_json
+from os import path, rename, remove, popen
+from argparse import ArgumentParser
+from ipaddress import ip_address
+from requests import request
+from sys import exit, stdout
+from time import sleep
+import logging
 
-debug = False
-do_syntax_check = True
-exit_after_syntax_check = False
-
-arg_parser = argparse.ArgumentParser(description="Dynamic DNS Client for DynHost")
-arg_parser.add_argument("-d", "--debug", dest="debug", action="store_true", help="Display additional (debug) information")
-arg_parser.add_argument("-s", "--syntax", dest="syntax", action="store_true", help="Run a syntax check and exit")
-arg_parser.add_argument("-n", "--no-syntax-check", dest="no_syntax_check", action="store_true", help="Disable syntax checking (you may then encounter errors if your configuration has some)")
-arg_parser.add_argument("--config", dest="configuration_path", nargs="?", default='dynhost.json', help="Path to the configuration file")
-arg_parser.add_argument("--scripts", dest="scripts_path", nargs="?", default='scripts', help="Path to the scripts folder")
-arg_parser.add_argument("--log", dest="log_path", nargs="?", default='dynhost.log', help="Path to the log file")
-args = arg_parser.parse_args()
-
-debug = args.debug
-configuration_file = args.configuration_path
-scripts_folder = args.scripts_path
-log_file = args.log_path
-
-if args.syntax:
-    do_syntax_check = True
-    exit_after_syntax_check = True
-
-else:
-    if args.no_syntax_check:
-        do_syntax_check = False
-
-try:
-    log_file_handle = open(log_file, 'a')
-
-except Exception as e:
-    print("Error opening the log file: " + str(e))
-    sys.exit(1)
-
-def log(obj, is_debug=False):
-    if is_debug and not debug : return 1
-
-    line = time.strftime("[%Y-%m-%d %H:%M:%S] ") + str(obj)
-    print(line)
-
+def load_config_file(filename: str):
     try:
-        log_file_handle.write(line + "\n")
-        log_file_handle.flush()
-
-    except Exception as e:
-        print("Could not write to the log file: " + str(e))
-
-def load_json_file(filename):
-    try:
-        log("Loading JSON file: " + filename, True)
+        logging.debug("Loading configuration file: {}".format(filename))
         with open(filename, 'r') as h:
-            return json.load(h)
+            return load_json(h)
 
     except Exception as e:
-        log("Error loading JSON file: " + filename + "\n" + str(e))
+        logging.error("Error loading configuration file: {}: {}".format(
+            filename,
+            e
+            ))
         return None
 
-def save_json_file(filename, content):
+def save_config_file(filename: str, content: str):
     try:
-        log("Saving JSON file: " + filename, True)
+        logging.debug("Saving configuration file: {}".format(filename))
         with open(filename, 'w') as h:
-            json.dump(content, h, indent=4)
+            dump_json(content, h, indent=4)
             return True
 
     except Exception as e:
-        log("Error writing JSON file: " + filename + "\n" + str(e))
+        logging.error("Error saving configuration file: {}: {}".format(
+            filename,
+            e
+            ))
         return False
 
-def execute_script(script):
+def execute_script(script: str, scripts_folder: str):
     try:
-        command = os.path.join(scripts_folder, script)
-        log("Executing script: " + command, True)
-        return os.popen(command).read()
+        command = path.join(scripts_folder, script)
+        logging.debug("Executing script: {}".format(command))
+        return popen(command).read().strip()
 
     except Exception as e:
-        log("Error executing script: " + script + "\n" + str(e))
+        logging.error("Error executing script: {}: {}".format(
+            script,
+            e
+            ))
         return None
 
-def check_script(script):
-    full_path = os.path.join(scripts_folder, script)
-    if os.path.exists(full_path):
+def update_dynhost(host: str, ip: str, username: str, password: str):
+    try:
+        req = request(
+            method="GET",
+            url="https://www.ovh.com/nic/update?system=dyndns&hostname={}&myip={}".format(host, ip),
+            auth=(username, password)
+            )
+
+        if req.status_code == 200:
+            logging.warning("Updated \"{}\" with IP \"{}\"".format(host, ip))
+            return True
+
+        elif req.status_code == 401:
+            logging.critical("Authentication failed for \"{}\", verify the credentials".format(host))
+
+        else:
+            logging.critical("Updated failed for \"{}\", got unexpected status code {}".format(
+                host,
+                req.status_code,
+            ))
+
+        return False
+
+    except Exception as e:
+        logging.critical("Error encountered while updating {}: {}".format(
+            host,
+            e,
+        ))
+        return False
+
+def is_valid_ip(ip: str):
+    try:
+        ip_address(ip)
+        return True
+
+    except:
+        return False
+
+def get_current_ip(method: str, scripts_folder: str, fallback: str = None):
+    from_method = execute_script(method, scripts_folder)
+    if is_valid_ip(from_method):
+        return from_method
+
+    else:
+        logging.warning("Could not retrieve valid IP address using: {}".format(method))
+
+        if fallback != None:
+            from_fallback = execute_script(fallback, scripts_folder)
+            if is_valid_ip(from_fallback):
+                return from_fallback
+
+            else:
+                logging.error("Could not retrieve valid IP address using fallback method: {}".format(fallback))
+
+    return None
+
+def check_script(script: str, scripts_folder: str):
+    full_path = path.join(scripts_folder, script)
+    if path.exists(full_path):
         return {"error": False}
 
     else:
         return {"error": True, "message": "File not found or inaccessible"}
 
-def update_dynhost(host, ip, username, password):
-    try:
-        log("Updating '" + host + "' with IP " + ip, True)
-        req = requests.request(method='GET', url='https://www.ovh.com/nic/update?system=dyndns&hostname=' + host + '&myip=' + str(ip), auth=(username, password))
-        if req.status_code == 200:
-            return True
-        
-        elif req.status_code == 401:
-            log("Got an HTTP 401 Unauthorized. Check the authentication username and password.")
-        
+def check_syntax(config: dict, scripts_folder: str):
+    if "settings" in config:
+        general_settings = [
+            "update_delay",
+            "fallback_ip_method",
+            "on_error",
+        ]
+
+        if all(setting in config["settings"] for setting in general_settings):
+            try:
+                int(config["settings"]["update_delay"])
+
+            except:
+                logging.error('"update_delay" should be a number, see README.md')
+                return False
+
+            fallback_script = check_script(config["settings"]["fallback_ip_method"], scripts_folder)
+            if fallback_script["error"]:
+                logging.error('"settings" -> "fallback_ip_method": script error: {}'.format(
+                    fallback_script["message"]
+                    ))
+                return False
+
+            on_error_settings = [
+                "enabled",
+                "script",
+            ]
+
+            if all(setting in config["settings"]["on_error"] for setting in on_error_settings):
+                if config["settings"]["on_error"]["enabled"]:
+                    on_error_script_check = check_script(config["settings"]["on_error"]["script"], scripts_folder)
+                    if on_error_script_check["error"]:
+                        logging.error('"on_error": script error: {}'.format(
+                            on_error_script_check["message"]
+                        ))
+                        return False
+
+            else:
+                logging.error('"on_error" block is missing one or more settings, see README.md')
+                return False
+
         else:
-            log('Unexpected HTTP Response, got HTTP ' + str(req.status_code))
-        
+            logging.error('"settings" block is missing one or more settings, see README.md')
+            return False
+
+    else:
+        logging.error('"settings" block is missing, see README.md')
         return False
+
+    if "auths" in config:
+        auth_settings = [
+            "username",
+            "password",
+        ]
+
+        for auth in config["auths"]:
+            if not all(setting in config["auths"][auth] for setting in auth_settings):
+                logging.error('Authentication "{}" is missing one or more settings, see README.md'.format(
+                    auth
+                ))
+                return False
+
+    else:
+        logging.error('"auths" block is missing, see README.md')
+        return False
+
+    if "hosts" in config:
+        host_settings = [
+            "hostname",
+            "auth",
+            "last_ip",
+            "ip_method",
+            "fallback",
+        ]
+
+        for host in config["hosts"]:
+            if all(setting in config["hosts"][host] for setting in host_settings):
+                if not config["hosts"][host]["auth"] in config["auths"]:
+                    logging.error('Host "{}" points to a missing authentication "{}"'.format(
+                        host,
+                        config["hosts"][host]["auth"]
+                        ))
+                    return False
+
+                host_script_check = check_script(
+                    config["hosts"][host]["ip_method"],
+                    scripts_folder
+                    )
+                if host_script_check["error"]:
+                    logging.error('Host "{}" -> "ip_method": script error: {}'.format(
+                        host,
+                        host_script_check["message"]
+                        ))
+                    return False
+
+            else:
+                logging.error('Host "{}" is missing one or more settings, see README.md'.format(
+                    host
+                ))
+                return False
+
+
+    else:
+        logging.error('"hosts" block is missing, see README.md')
+        return False
+
+    return True
+
+if __name__ == "__main__":
+    print("""Dynamic DNS Client for DynHost
+Copyright (C) 2019-2020  akrocynova
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions, see the LICENSE file for details.
+""")
+
+    arg_parser = ArgumentParser(description="Dynamic DNS Client for DynHost")
+    arg_parser.add_argument(
+        "-s", "--syntax",
+        dest="syntax",
+        action="store_true",
+        help="Run a syntax check and exit"
+        )
+    arg_parser.add_argument(
+        "-n", "--no-syntax-check",
+        dest="no_syntax_check",
+        action="store_true",
+        help="Disable syntax verification (you may then encounter errors if your configuration has some)"
+        )
+    arg_parser.add_argument(
+        "-c", "--config",
+        dest="configuration_file",
+        type=str,
+        default="dynhost.json",
+        help="Path to the configuration file"
+        )
+    arg_parser.add_argument(
+        "--scripts",
+        dest="scripts_folder",
+        type=str,
+        default="scripts",
+        help="Path to the scripts folder"
+        )
+    arg_parser.add_argument(
+        "--loglevel",
+        dest="loglevel",
+        type=str,
+        default=None,
+        help="Logging level (default: warning)"
+        )
+    arg_parser.add_argument(
+        "--logfile",
+        dest="logfile",
+        type=str,
+        default=None,
+        help="Save log output to this file"
+        )
+    arg_parser.add_argument(
+        "--rotate-log",
+        dest="rotate_log",
+        action="store_true",
+        help="Perform a log rotation on startup"
+        )
+    arg_parser.add_argument(
+        "--max-rotations",
+        dest="max_rotations",
+        type=int,
+        default=5,
+        help="How many old log files to keep (default: 5, 0: keep all)"
+        )
+    args = arg_parser.parse_args()
+
+    logging_levels = {
+        "critical": logging.CRITICAL,
+        "error": logging.ERROR,
+        "warning": logging.WARNING,
+        "info": logging.INFO,
+        "debug": logging.DEBUG
+        }
+
+    if args.loglevel == None:
+        logging_level = logging.WARNING
+
+    else:
+        logging_level = logging_levels.get(
+            args.loglevel.strip().lower(),
+            None
+            )
+
+        if logging_level == None:
+            print("Incorrect logging level: \"{}\"".format(args.loglevel))
+            exit(1)
+
+    try:
+        logformat = logging.Formatter("[%(levelname)s] [%(asctime)s] %(message)s")
+        logger = logging.getLogger()
+        logger.setLevel(logging_level)
+
+        logstdout_h = logging.StreamHandler(stream=stdout)
+        logstdout_h.setFormatter(logformat)
+        logger.addHandler(logstdout_h)
+
+        if args.logfile != None:
+            full_rotation = False
+            log_rotated = False
+            if args.rotate_log and path.exists(args.logfile):
+                if args.max_rotations == 1:
+                    remove("{}.1".format(args.logfile))
+                    full_rotation = True
+
+                elif path.exists("{}.{}".format(args.logfile, args.max_rotations)) and args.max_rotations > 1:
+                    for r in range(2, args.max_rotations + 1):
+                        rename("{}.{}".format(args.logfile, r), "{}.{}".format(args.logfile, r - 1))
+                    full_rotation = True
+
+                ro_log_index = 1
+                ro_logfile = "{}.{}".format(args.logfile, ro_log_index)
+                while path.exists(ro_logfile):
+                    ro_log_index += 1
+                    ro_logfile = "{}.{}".format(args.logfile, ro_log_index)
+                rename(args.logfile, ro_logfile)
+                log_rotated = True
+
+            logfile_h = logging.FileHandler(filename=args.logfile)
+            logfile_h.setFormatter(logformat)
+            logger.addHandler(logfile_h)
+
+            if full_rotation:
+                logging.info("Old log files have rotated")
+
+            if log_rotated:
+                logging.info("Last log file moved to {}".format(
+                    ro_logfile
+                ))
 
     except Exception as e:
-        log('Error while updating DynHost : ' + str(e))
-        return False
+        print("Could not setup logging: {}".format(str(e)))
+        exit(1)
 
-def get_current_ip(method, fallback=None):
-    from_method = execute_script(method)
-    if from_method == None or len(from_method) < 1:
-        log("Could not retrieve IP address with : " + method)
+    configuration = load_config_file(args.configuration_file)
+    if configuration == None:
+        logging.critical("No configuration was loaded, exitting")
+        exit(1)
 
-        if not fallback == None:
-            from_fallback = execute_script(fallback)
-            if from_fallback == None or len(from_fallback) < 1:
-                log("Could not retrieve IP address with fallback method : " + fallback)
-
-            else:
-                return from_fallback
-
-    else:
-        return from_method
-
-    return None
-
-def check_syntax(config, exit_at_end=False):
-    if config == None:
-        log("No configuration loaded, exitting.")
-        sys.exit(1)
-
-    else:
-        if "settings" in config:
-            general_settings = [
-                "update_delay",
-                "fallback_ip_method",
-                "on_error",
-            ]
-
-            if all(setting in config["settings"] for setting in general_settings):
-                try:
-                    delay = int(config["settings"]["update_delay"])
-
-                except:
-                    log('"update_delay" should be a number, see README.md')
-                    sys.exit(3)
-                
-                fallback_script = check_script(config["settings"]["fallback_ip_method"])
-                if fallback_script["error"]:
-                    log('"settings" "fallback_ip_method" script error: ' + fallback_script["message"])
-                    sys.exit(4)
-
-                on_error_settings = [
-                    "enabled",
-                    "script",
-                ]
-
-                if all(setting in config["settings"]["on_error"] for setting in on_error_settings):
-                    if config["settings"]["on_error"]["enabled"]:
-                        on_error_script_check = check_script(config["settings"]["on_error"]["script"])
-                        if on_error_script_check["error"]:
-                            log('"on_error" script error: ' + on_error_script_check["message"])
-                            sys.exit(4)
-
-                else:
-                    log('"on_error" block is missing one or more settings, see README.md')
-                    sys.exit(3)
-
-            else:
-                log('"settings" block is missing one or more settings, see README.md')
-                sys.exit(2)
-        
+    if args.syntax:
+        if check_syntax(configuration, args.scripts_folder):
+            print("Syntax check: OK")
+            exit(0)
         else:
-            log('"settings" block is missing, see README.md')
-            sys.exit(2)
-        
-        if "auths" in config:
-            auth_settings = [
-                "username",
-                "password",
-            ]
+            exit(2)
 
-            for auth in config["auths"]:
-                if not all(setting in config["auths"][auth] for setting in auth_settings):
-                    log('Authentication "' + auth + '" is missing one or more settings, see README.md')
-                    sys.exit(3)
-        
-        else:
-            log('"auths" block is missing, see README.md')
-            sys.exit(2)
+    elif not args.no_syntax_check:
+        if not check_syntax(configuration, args.scripts_folder):
+            exit(2)
 
-        if "hosts" in config:
-            host_settings = [
-                "hostname",
-                "auth",
-                "last_ip",
-                "ip_method",
-                "fallback",
-            ]
+    logging.info("DynHost Updater started")
+    update_delay = int(configuration["settings"]["update_delay"])
 
-            for host in config["hosts"]:
-                if all(setting in config["hosts"][host] for setting in host_settings):
-                    if not config["hosts"][host]["auth"] in config["auths"]:
-                        log('Host "' + host + '" points to a missing authentication "' + config["hosts"][host]["auth"] + '"')
-                        sys.exit(3)
-                    
-                    host_script_check = check_script(config["hosts"][host]["ip_method"])
-                    if host_script_check["error"]:
-                        log('Host "' + host + '" "ip_method" script error: ' + host_script_check["message"])
-                        sys.exit(4)
-                
-                else:
-                    log('Host "' + host + '" is missing one or more settings, see README.md')
-                    sys.exit(3)
+    while True:
+        write_hosts = False
 
-        
-        else:
-            log('"hosts" block is missing, see README.md')
-            sys.exit(2)
-        
-        if debug or exit_at_end : log("Syntax check: OK")
-        if exit_at_end : sys.exit(0)
+        for host in configuration["hosts"]:
+            fallback_method = configuration["settings"]["fallback_ip_method"] if configuration["hosts"][host]["fallback"] else None
 
+            current_ip = get_current_ip(
+                configuration["hosts"][host]["ip_method"],
+                args.scripts_folder,
+                fallback=fallback_method
+                )
 
-log("Logging to " + log_file)
+            if current_ip == None:
+                logging.error("Skipping \"{}\" as no valid IP address could be retrieved".format(
+                    configuration["hosts"][host]["hostname"]
+                ))
 
-configuration = load_json_file(configuration_file)
-if do_syntax_check : check_syntax(configuration, exit_after_syntax_check)
+            elif current_ip != configuration["hosts"][host]["last_ip"]:
+                logging.info("Updating \"{}\" with IP \"{}\"".format(
+                    configuration["hosts"][host]['hostname'],
+                    current_ip
+                    ))
 
-log("DynHost Updater started.")
-update_delay = int(configuration["settings"]["update_delay"])
+                update_success = update_dynhost(
+                    configuration["hosts"][host]['hostname'],
+                    current_ip,
+                    configuration["auths"][configuration["hosts"][host]["auth"]]["username"],
+                    configuration["auths"][configuration["hosts"][host]["auth"]]["password"]
+                    )
 
-while True:
-    write_hosts = False
-
-    for host in configuration["hosts"]:
-        fallback_method = None
-        if configuration["hosts"][host]["fallback"] : fallback_method = configuration["settings"]["fallback_ip_method"]
-
-        current_ip = get_current_ip(configuration["hosts"][host]["ip_method"], fallback_method)
-        if current_ip == None:
-            log('Skipping "' + configuration["hosts"][host]["hostname"] + '" as no IP address could be retrieved.')
-
-        else:
-            if current_ip != configuration["hosts"][host]["last_ip"]:
-                # the current ip is different from the last one, we need to update the DNS
-                log('Updating "' + configuration["hosts"][host]['hostname'] + '" with ' + current_ip)
-                if update_dynhost(configuration["hosts"][host]['hostname'], current_ip, configuration["auths"][configuration["hosts"][host]["auth"]]["username"], configuration["auths"][configuration["hosts"][host]["auth"]]["password"]):
-                    configuration["hosts"][host]["last_ip"] = current_ip # remember the new IP because there was no error
+                if update_success:
+                    configuration["hosts"][host]["last_ip"] = current_ip
                     write_hosts = True
 
-                else:
-                    # there was an error
-                    if configuration["settings"]["on_error"]["enabled"]:
-                        error_script = execute_script(configuration["settings"]["on_error"]["script"] + ' "' + host + '"')
-                        log("Error script: " + str(error_script))
+                elif configuration["settings"]["on_error"]["enabled"]:
+                    error_script = execute_script(
+                        "{} \"{}\"".format(
+                            configuration["settings"]["on_error"]["script"],
+                            host),
+                        args.scripts_folder
+                        )
 
+        if write_hosts:
+            logging.debug("Writing hosts after IP change")
+            save_config_file(args.configuration_file, configuration)
 
-    if write_hosts:
-        log("Writing hosts after IP change", True)
-        save_json_file(configuration_file, configuration)
-
-    log("Waiting " + str(update_delay) + " seconds.", True)
-    time.sleep(update_delay)
+        logging.debug("Waiting {} seconds".format(update_delay))
+        sleep(update_delay)

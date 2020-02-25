@@ -7,36 +7,43 @@ It uses scripts located in the `scripts` folder to retrieve IP addresses and han
 
 ## Installation
 
-There are two scripts (`install.sh` and `uninstall.sh`) which will install DynHost as a service on Linux.
-It requires Python 3 and the packages inside `requirements.txt` to work.
-These commands are aimed at Debian-based distros.
+There are two scripts (`install.sh` and `uninstall.sh`) which will install DynHost as a Systemd service on Linux.
+It requires Python 3.6+ and the packages inside `requirements.txt` to work.
 
-The scripts that come with this repository require `curl` and `sed` to be installed.
+The scripts in the `scripts` folder in this repository require `curl` to be installed.
 
 ```bash
+# Dependencies for Debian / Raspbian / Ubuntu
 sudo apt update
-sudo apt install python3 python3-pip
+sudo apt install python3 python3-pip git
 
+# Dependencies for Arch / Manjaro
+sudo pacman -Syu --needed python python-pip git
+
+# Clone the repository
 git clone https://github.com/hoot-w00t/dynhost-updater.git
 cd dynhost-updater
 
-python3 -m pip install -U -r requirements.txt
+# Install
+sudo ./install.sh
 
-sudo sh install.sh
-#sudo sh uninstall.sh
+# Or uninstall
+sudo ./uninstall.sh
 ```
 
 To manage the service you can use `sudo systemctl start/stop/status dynhost.service`.
-By default the log file will be at `/etc/dynhost/dynhost.log`.
+By default log files will be in `/var/log/dynhost/`.
 
 ## Configuration
 
 You can take a look at the `examples` and the `scripts` folders to see basic configurations. You can use them as templates.
-The program will check its configuration file for any errors before running, you can force a syntax check without starting the program with the `--syntax` parameter. If you need to disable this syntax check, use the `--no-syntax-check` parameter.
+
+The program will check its configuration file for any errors before running, you can force a syntax check without starting the program with the `--syntax` parameter.
+If you need to disable this syntax check, for instance if it malfunctions, use the `--no-syntax-check` parameter.
 
 ### Settings
 The settings tell how the program should work.
-* `update_delay` is the delay between each check for new IP addresses (in seconds)
+* `update_delay` is the delay between each check for changed IP addresses (in seconds)
 * `fallback_ip_method` is the default IP address script to use if the main one fails. (Can be enabled/disabled for each host individually)
 
 The `on_error` block tells the program what to do in case of an error updating a DynHost:
@@ -91,9 +98,10 @@ You can configure as many hosts as you need, where:
 
 ### Scripts
 Scripts just need to be executable, using `chmod +x your_script_file.sh`.
+
 You can place your scripts inside the existing `scripts` folder before installing with the `install.sh` script. All files inside the folder will be installed and rendered executable.
 
-**Note:** The program expects raw IP addresses such as `127.0.0.1`, you need to take care of the parsing inside the script, otherwise it will not work.
+**Note:** The program expects raw IP addresses such as `127.0.0.1`, you need to take care of the parsing inside the script. Any whitespaces will be removed by the program.
 
 ```bash
 #!/bin/sh
@@ -101,3 +109,11 @@ You can place your scripts inside the existing `scripts` folder before installin
 curl -s something.com/what_is_my_ip
 any_other_command
 ```
+
+### Logging and arguments
+If you need to adjust settings such as logging which are given as arguments to the program you will need to edit the `dynhost.service` file before installing or if you already installed `/etc/systemd/system/dynhost.service`.
+
+If you modify the installed service file you will need to execute `systemctl daemon-reload` and then you can restart the service to apply the changes immediately.
+
+### Note about IPv6
+At the time I am writing this, OVH's DynHost only supports IPv4, the program accepts IPv6 addresses returned from scripts but DynHost does not create/update an AAAA field.

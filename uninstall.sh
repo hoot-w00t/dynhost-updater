@@ -10,19 +10,16 @@ echo "Deleting service..."
 systemctl stop dynhost.service
 systemctl disable dynhost.service
 
-rm /usr/lib/systemd/system/dynhost.service
+rm /etc/systemd/system/dynhost.service
 
-deluser --system dynhost
+userdel --remove --force dynhost
 
 systemctl daemon-reload
 
 echo "Uninstalling DynHost..."
 
-rm /usr/bin/dynhost.py
-
-rm /etc/dynhost/dynhost.json
-rm /etc/dynhost/scripts/*
-
-rmdir /etc/dynhost/scripts
+rm /usr/bin/dynhost
+rm -r /etc/dynhost
+rm -r /var/log/dynhost
 
 echo "Finished uninstalling!"

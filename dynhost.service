@@ -4,7 +4,7 @@ Requires=multi-user.target
 
 [Service]
 WorkingDirectory=/etc/dynhost
-ExecStart=/usr/bin/python3 /usr/bin/dynhost.py
+ExecStart=/usr/bin/dynhost --logfile /var/log/dynhost/dynhost.log --config /etc/dynhost/dynhost.json --scripts /etc/dynhost/scripts --rotate-log
 User=dynhost
 Group=dynhost
 
