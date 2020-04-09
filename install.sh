@@ -1,24 +1,24 @@
 #!/bin/sh
 
-if [ $(id -u) -ne 0 ]
-  then echo "You need to run this script as root."
-  exit
+if [ "$(id -u)" -ne 0 ]
+    then echo "You need to run this script as root."
+    exit
 fi
 
 echo "Creating dynhost user..."
-useradd --system --shell /bin/bash --create-home dynhost
+useradd --system --shell "$SHELL" --create-home dynhost
 
-echo "Installing Python dependencies for user dynhost..."
+echo "Installing Python dependencies for user 'dynhost'..."
 su -c "python3 -m pip install --user -r requirements.txt" dynhost
 
-echo "Installing DynHost..."
+echo "Installing DynHost Updater..."
 
 cp dynhost.py /usr/bin/dynhost
 chmod 755 /usr/bin/dynhost
 
 mkdir -p /etc/dynhost/
-cp examples/dynhost.json.example /etc/dynhost/dynhost.json
-cp -r scripts/ /etc/dynhost/scripts
+cp -n examples/dynhost.json.example /etc/dynhost/dynhost.json
+cp -rn scripts/* /etc/dynhost/scripts/
 
 chown -R dynhost:dynhost /etc/dynhost/
 chmod 640 /etc/dynhost/dynhost.json
