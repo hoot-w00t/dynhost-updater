@@ -68,34 +68,23 @@ def execute_script(script: str, scripts_folder: str):
         return None
 
 def update_dynhost(host: str, ip: str, username: str, password: str):
-    try:
-        req = request(
-            method="GET",
-            url="https://www.ovh.com/nic/update?system=dyndns&hostname={}&myip={}".format(host, ip),
-            auth=(username, password)
-            )
+    req = request(
+        method="GET",
+        url="https://www.ovh.com/nic/update?system=dyndns&hostname={}&myip={}".format(host, ip),
+        auth=(username, password)
+        )
 
-        if req.status_code == 200:
-            logging.warning("Updated \"{}\" with IP \"{}\"".format(host, ip))
-            return True
+    if req.status_code == 200:
+        logging.warning("Updated \"{}\" with IP \"{}\"".format(host, ip))
 
-        elif req.status_code == 401:
-            logging.critical("Authentication failed for \"{}\", verify the credentials".format(host))
+    elif req.status_code == 401:
+        raise Exception("Authentication failed for \"{}\", verify the credentials".format(host))
 
-        else:
-            logging.critical("Updated failed for \"{}\", got unexpected status code {}".format(
-                host,
-                req.status_code,
-            ))
-
-        return False
-
-    except Exception as e:
-        logging.critical("Error encountered while updating {}: {}".format(
-            host,
-            e,
-        ))
-        return False
+    else:
+        raise Exception("Updated failed for \"{}\", got unexpected status code {}".format(
+                            host,
+                            req.status_code,
+                        ))
 
 def is_valid_ip(ip: str):
     try:
@@ -409,24 +398,29 @@ if __name__ == "__main__":
                     current_ip
                     ))
 
-                update_success = update_dynhost(
-                    configuration["hosts"][host]['hostname'],
-                    current_ip,
-                    configuration["auths"][configuration["hosts"][host]["auth"]]["username"],
-                    configuration["auths"][configuration["hosts"][host]["auth"]]["password"]
-                    )
+                try:
+                    update_dynhost(
+                        configuration["hosts"][host]['hostname'],
+                        current_ip,
+                        configuration["auths"][configuration["hosts"][host]["auth"]]["username"],
+                        configuration["auths"][configuration["hosts"][host]["auth"]]["password"]
+                        )
 
-                if update_success:
                     configuration["hosts"][host]["last_ip"] = current_ip
                     write_hosts = True
 
-                elif configuration["settings"]["on_error"]["enabled"]:
-                    error_script = execute_script(
-                        "{} \"{}\"".format(
-                            configuration["settings"]["on_error"]["script"],
-                            host),
-                        args.scripts_folder
-                        )
+                except Exception as e:
+                    logging.critical("Error encountered while updating {}: {}".format(
+                        host,
+                        e,
+                    ))
+                    if configuration["settings"]["on_error"]["enabled"]:
+                        error_script = execute_script(
+                            "{} \"{}\"".format(
+                                configuration["settings"]["on_error"]["script"],
+                                host),
+                            args.scripts_folder
+                            )
 
         if write_hosts:
             logging.debug("Writing hosts after IP change")
