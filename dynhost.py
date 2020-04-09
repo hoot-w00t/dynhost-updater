@@ -2,7 +2,7 @@
 
 """
     Dynamic DNS Client for DynHost
-    Copyright (C) 2019-2020 akrocynova
+    Copyright (C) 2018-2020 akrocynova
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,7 +19,14 @@
 
 """
 
-from json import load as load_json, dump as dump_json
+licence_header = """\
+Dynamic DNS Client for DynHost
+Copyright (C) 2018-2020  akrocynova
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions, see the LICENSE file for details.\
+"""
+
 from os import path, rename, remove, popen
 from argparse import ArgumentParser
 from ipaddress import ip_address
@@ -27,33 +34,25 @@ from requests import request
 from sys import exit, stdout
 from time import sleep
 import logging
+import json
+import collections
+import pathlib
+import typing
 
-def load_config_file(filename: str):
-    try:
-        logging.debug("Loading configuration file: {}".format(filename))
-        with open(filename, 'r') as h:
-            return load_json(h)
+class Configuration(collections.UserDict):
+    def __init__(self, path: typing.Union[pathlib.Path, str]):
+        if not isinstance(path, pathlib.Path):
+            path = pathlib.Path(path).expanduser().resolve()
+        self._path = path
+        self.load()
 
-    except Exception as e:
-        logging.error("Error loading configuration file: {}: {}".format(
-            filename,
-            e
-            ))
-        return None
+    def load(self):
+        with self._path.open('r') as h:
+            self.data = json.load(h)
 
-def save_config_file(filename: str, content: str):
-    try:
-        logging.debug("Saving configuration file: {}".format(filename))
-        with open(filename, 'w') as h:
-            dump_json(content, h, indent=4)
-            return True
-
-    except Exception as e:
-        logging.error("Error saving configuration file: {}: {}".format(
-            filename,
-            e
-            ))
-        return False
+    def save(self):
+        with self._path.open('w') as h:
+            json.dump(self.data, h, indent=4)
 
 def execute_script(script: str, scripts_folder: str):
     try:
@@ -241,12 +240,7 @@ def check_syntax(config: dict, scripts_folder: str):
     return True
 
 if __name__ == "__main__":
-    print("""Dynamic DNS Client for DynHost
-Copyright (C) 2019-2020  akrocynova
-This program comes with ABSOLUTELY NO WARRANTY.
-This is free software, and you are welcome to redistribute it
-under certain conditions, see the LICENSE file for details.
-""")
+    print(licence_header)
 
     arg_parser = ArgumentParser(description="Dynamic DNS Client for DynHost")
     arg_parser.add_argument(
@@ -371,9 +365,11 @@ under certain conditions, see the LICENSE file for details.
         print("Could not setup logging: {}".format(str(e)))
         exit(1)
 
-    configuration = load_config_file(args.configuration_file)
-    if configuration == None:
-        logging.critical("No configuration was loaded, exitting")
+    try:
+        configuration = Configuration(args.configuration_file)
+
+    except Exception as e:
+        logging.critical("Could not load configuration: {}".format(e))
         exit(1)
 
     if args.syntax:
@@ -434,7 +430,11 @@ under certain conditions, see the LICENSE file for details.
 
         if write_hosts:
             logging.debug("Writing hosts after IP change")
-            save_config_file(args.configuration_file, configuration)
+            try:
+                configuration.save()
+
+            except Exception as e:
+                logging.error("Could not save configuration file: {}".format(e))
 
         logging.debug("Waiting {} seconds".format(update_delay))
         sleep(update_delay)
