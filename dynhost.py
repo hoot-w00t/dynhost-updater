@@ -81,7 +81,7 @@ def update_dynhost(host: str, ip: str, username: str, password: str):
         raise Exception("Authentication failed for \"{}\", verify the credentials".format(host))
 
     else:
-        raise Exception("Updated failed for \"{}\", got unexpected status code {}".format(
+        raise Exception("Update failed for \"{}\", got unexpected status code {}".format(
                             host,
                             req.status_code,
                         ))
