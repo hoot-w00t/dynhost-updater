@@ -16,7 +16,7 @@ echo "Installing DynHost Updater..."
 cp dynhost.py /usr/bin/dynhost
 chmod 755 /usr/bin/dynhost
 
-mkdir -p /etc/dynhost/
+mkdir -p /etc/dynhost/scripts
 cp -n examples/dynhost.json.example /etc/dynhost/dynhost.json
 cp -rn scripts/* /etc/dynhost/scripts/
 
