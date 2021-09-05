@@ -97,17 +97,28 @@ You can configure as many hosts as you need, where:
 ```
 
 ### Scripts
-Scripts just need to be executable, using `chmod +x your_script_file.sh`.
+Scripts just need to be executable, using `chmod +x your_script_file.sh` on Linux.
 
 You can place your scripts inside the existing `scripts` folder before installing with the `install.sh` script. All files inside the folder will be installed and rendered executable.
 
-**Note:** The program expects raw IP addresses such as `127.0.0.1`, you need to take care of the parsing inside the script. Any whitespaces will be removed by the program.
+**Note:** The program expects raw IP addresses such as `127.0.0.1`, you need to take care of the parsing inside the script. Any whitespaces will be ignored.
 
+Example for Linux
 ```bash
 #!/bin/sh
 
 curl -s something.com/what_is_my_ip
 any_other_command
+```
+
+Examples for Windows
+```batch
+@echo off
+
+curl -s something.com/what_is_my_ip
+```
+```batch
+@curl -s something.com/what_is_my_ip
 ```
 
 ### Logging and arguments
